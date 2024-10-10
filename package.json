@@ -1,0 +1,43 @@
+{
+    "name": "com.mopsicus.shardy",
+    "version": "1.0.0",
+    "displayName": "Shardy",
+    "description": "Client for Shardy – framework for online games and applications for Node.js. Supports sockets, websockets, WebGL.",
+    "license": "MIT",
+    "author": "Mopsicus <mail@mopsicus.ru>",
+    "homepage": "https://github.com/mopsicus/shardy-unity",
+    "changelogUrl": "https://github.com/mopsicus/shardy-unity/blob/main/CHANGELOG.md",
+    "documentationUrl": "https://github.com/mopsicus/shardy-unity/blob/main/Documentation~/index.md",
+    "unity": "2022.3",
+    "keywords": [
+      "shardy",
+      "framework",
+      "rpc",
+      "web",
+      "netcode",
+      "games",
+      "engine",
+      "multiplayer",
+      "websocket",
+      "networking",
+      "webgl",
+      "socket"
+    ],
+    "dependencies": {},
+    "repository": {
+      "type": "git",
+      "url": "https://github.com/mopsicus/shardy-unity.git"
+    },  
+    "samples": [
+      {
+        "displayName": "Demo",
+        "description": "A demo scene to show Shardy API usage",
+        "path": "Samples~/Demo"
+      },
+      {
+        "displayName": "TicTacToe",
+        "description": "Tic-Tac-Toe client for test game server ",
+        "path": "Samples~/TicTacToe"
+      }      
+    ]
+  }
