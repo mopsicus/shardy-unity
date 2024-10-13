@@ -8,7 +8,7 @@
     </picture>
 </p>
 <h3 align="center">Unity client for Shardy</h3>
-<h4 align="center">Framework for games and apps</h4>
+<h4 align="center">Framework for online games and apps</h4>
 <p align="center">
     <a href="#quick-start">Quick start</a> · <a href="./Documentation~/index.md">Docs</a> · <a href="https://github.com/mopsicus/shardy">Shardy</a> · <a href="https://github.com/mopsicus/shardy-template">Service template</a> · <a href="https://github.com/mopsicus/shardy-unity/issues">Report Bug</a>
 </p>
