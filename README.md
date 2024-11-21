@@ -179,6 +179,25 @@ class MyJsonSerializer : ISerializer {
 
 See [documentation](./Documentation~/index.md) for information on all classes and methods.
 
+# 🧩 Modules
+
+[FSM](https://github.com/mopsicus/shardy-fsm) – implementation of a finite state machine with flexible API: states, triggers, conditions.
+
+# 🗓️ Plans
+
+The plans are truly grand! It is to create an ecosystem for developers who will be able to build their game backend out of existing Shardy services like bricks, and compose mobile clients from Shardy modules.
+
+Listed below are some of the modules I plan to make:
+- base helpers
+- binding UI
+- event bus
+- scene/screen manager
+- localization
+- sound manager
+- ads manager
+
+The list is endless. Be in touch.
+
 # 🏗️ Contributing
 
 We invite you to contribute and help improve Unity client for Shardy. Please see [contributing document](./CONTRIBUTING.md). 🤗
