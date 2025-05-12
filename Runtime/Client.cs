@@ -73,20 +73,20 @@ namespace Shardy {
         /// <param name="serializer">Serializer</param>
         /// <param name="options">Client options (optional)</param>
         /// <param name="handshake">Handshake after connect (optional)</param>
-        public Client(IValidator validator, ISerializer serializer, ClientOptions options = null, byte[] handshake = null) {
+        public Client(IValidator validator = null, ISerializer serializer = null, ClientOptions options = null, byte[] handshake = null) {
 #if UNITY_WEBGL && !UNITY_EDITOR
             WebSocketManager.Init();
 #if SHARDY_DEBUG_RAW
             WebSocketManager.SetDebug(true);
 #endif
 #endif
-            _validator = validator;
-            _serializer = serializer;
+            _validator = validator ?? new DefaultValidator();
+            _serializer = serializer ?? new DefaultSerializer();
             _options = options ?? new ClientOptions();
             _handshake = handshake;
 #if UNITY_WEBGL && !UNITY_EDITOR
             if (_options.Type == TransportType.Tcp) {
-                Logger.Error($"Unable to use TCP transport for WebGL", TAG);
+                Logger.Error($"unable to use TCP transport for WebGL", TAG);
                 return;
             }
 #endif

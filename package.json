@@ -1,6 +1,6 @@
 {
     "name": "com.mopsicus.shardy",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "displayName": "Shardy",
     "description": "Client for Shardy – framework for online games and applications on Node.js. Supports sockets, websockets, WebGL.",
     "license": "MIT",

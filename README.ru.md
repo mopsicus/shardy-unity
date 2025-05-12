@@ -156,6 +156,9 @@ class MyHandshake : IValidator {
 }
 ```
 
+> [!NOTE]
+> Вы можете использовать простой встроенный валидатор `DefaultValidator`.
+
 ### Сериализация
 
 Shardy поддерживает пользовательскую сериализацию передаваемых данных. Вы можете использовать JSON, MessagePack, Protobuf, FlatBuffers и т.д. или свой собственный сериализатор.
@@ -176,6 +179,9 @@ class MyJsonSerializer : ISerializer {
     }
 }
 ```
+
+> [!NOTE]
+> Вы можете использовать простой встроенный сериализатор `DefaultSerializer`.
 
 Смотрите [документацию](./Documentation~/index.md) с информацией о всех классах и методах.
 

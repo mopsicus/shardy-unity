@@ -40,6 +40,9 @@ If your implementation does not need to do a two-step handshake, you can set "st
 
 Your handshake [validator](./reference.md#-ivalidator) class is passed to the [`Client`](./reference.md#-client) constructor as the first parameter, the next is the serializer.
 
+> [!NOTE]
+> You can use the simple built-in `DefaultValidator` validator.
+
 # 🧱 Serializer
 
 Shardy uses a custom serializer for all transmitted data. You can use JSON, MessagePack, Protobuf, FlatBuffers, etc. or your own serializer. You have to create your own serializer class by inheriting the [`Serializer`](./reference.md#-iserializer) class, implement encode/decode methods and pass it to your service and client. The main goal – encode [`PayloadData`](./reference.md#payloaddata) to byte array before sending and back after receiving.
@@ -58,6 +61,9 @@ class MyJsonSerializer : ISerializer {
     }
 }
 ```
+
+> [!NOTE]
+> You can use the simple built-in `DefaultSerializer` serializer.
 
 I have plans to do some tutorials on the most popular serializers for Unity and their use with Shardy. Stay tuned.
 

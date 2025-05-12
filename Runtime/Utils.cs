@@ -11,6 +11,77 @@ namespace Shardy {
     public static class Utils {
 
         /// <summary>
+        /// Change keys first letter case in JSON string
+        /// </summary>
+        /// <param name="json">Json darta</param>
+        /// <param name="isToUpper">Is uppercase or lowercase</param>
+        /// <returns>Modified JSON</returns>
+        public static string ChangeKeysCase(string json, bool isToUpper) {
+            if (string.IsNullOrWhiteSpace(json)) {
+                return json;
+            }
+            try {
+                json = json.Trim();
+                if (!json.StartsWith("{") || !json.EndsWith("}")) {
+                    return json;
+                }
+                var content = json[1..^1].Trim();
+                if (string.IsNullOrEmpty(content)) {
+                    return "{}";
+                }
+                var result = new StringBuilder("{");
+                var braceLevel = 0;
+                var squareBracketLevel = 0;
+                var isInQuotes = false;
+                var isReadingKey = true;
+                var currentKey = string.Empty;
+                for (var i = 0; i < content.Length; i++) {
+                    var c = content[i];
+                    if (c == '"' && (i == 0 || content[i - 1] != '\\')) {
+                        isInQuotes = !isInQuotes;
+                        if (isReadingKey) {
+                            currentKey += c;
+                        } else {
+                            result.Append(c);
+                        }
+                        continue;
+                    }
+                    if (!isInQuotes) {
+                        if (c == '{') {
+                            braceLevel++;
+                        } else if (c == '}') {
+                            braceLevel--;
+                        } else if (c == '[') {
+                            squareBracketLevel++;
+                        } else if (c == ']') {
+                            squareBracketLevel--;
+                        }
+                    }
+                    if (isReadingKey && isInQuotes) {
+                        currentKey += c;
+                    } else if (isReadingKey && !isInQuotes && c == ':') {
+                        var keyWithoutQuotes = currentKey[1..^1];
+                        var modifiedKey = keyWithoutQuotes.Length > 0 ? (isToUpper ? char.ToUpperInvariant(keyWithoutQuotes[0]) + keyWithoutQuotes[1..] : char.ToLowerInvariant(keyWithoutQuotes[0]) + keyWithoutQuotes[1..]) : keyWithoutQuotes;
+                        result.Append($"\"{modifiedKey}\":");
+                        isReadingKey = false;
+                        currentKey = "";
+                        continue;
+                    } else if (!isReadingKey && !isInQuotes && braceLevel == 0 && squareBracketLevel == 0 && c == ',') {
+                        isReadingKey = true;
+                        result.Append(c);
+                        continue;
+                    } else if (!isReadingKey) {
+                        result.Append(c);
+                    }
+                }
+                result.Append("}");
+                return result.ToString();
+            } catch {
+                return json;
+            }
+        }
+
+        /// <summary>
         /// Custom timer for WebGL compatibility
         /// </summary>
         /// <param name="delay">Interval for timer, ms</param>
