@@ -13,10 +13,12 @@ public class Connector : MonoBehaviour {
     /// Init
     /// 
     /// This demo uses TCP transport for connecting to test game server
+    /// And uses test validator and serializer
+    /// Make sure to use your own validator and serializer on backend and client
     /// </summary>
     void Awake() {
         if (_client == null) {
-            _client = new Client(new TestHandshake(), new TestSerializer(), new ClientOptions());
+            _client = new Client(new TestHandshake(), new TestSerializer(), new ClientOptions(TransportType.WebSocket));
             DontDestroyOnLoad(gameObject);
         }
     }

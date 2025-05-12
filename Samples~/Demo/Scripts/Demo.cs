@@ -1,7 +1,7 @@
-using UnityEngine;
-using Shardy;
 using System.Text;
+using Shardy;
 using TMPro;
+using UnityEngine;
 using UnityEngine.UI;
 
 public class Demo : MonoBehaviour {
@@ -68,12 +68,13 @@ public class Demo : MonoBehaviour {
     /// Init
     /// 
     /// This demo uses TCP transport for connecting to test service
+    /// And uses default validator and serializer
     /// If you want to test client on your own backend with Websockets, change it in ClientOptions
     /// </summary>
     void Awake() {
         LogScroll.verticalNormalizedPosition = 1f;
         SwitchControls(false);
-        _client = new Client(new MyHandshake(), new MyJSON(), new ClientOptions());
+        _client = new Client();
         _client.OnConnect += OnConnect;
         _client.OnDisconnect += OnDisconnect;
         _client.OnReady += OnReady;
