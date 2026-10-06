@@ -1,4 +1,5 @@
 using System;
+using System.Threading.Tasks;
 
 namespace Shardy {
 
@@ -60,11 +61,7 @@ namespace Shardy {
         /// <summary>
         /// Is client connected
         /// </summary>
-        public bool IsConnected {
-            get {
-                return _connection.IsConnected;
-            }
-        }
+        public bool IsConnected => _connection.IsConnected;
 
         /// <summary>
         /// Client constructor
@@ -72,8 +69,8 @@ namespace Shardy {
         /// <param name="validator">Validator</param>
         /// <param name="serializer">Serializer</param>
         /// <param name="options">Client options (optional)</param>
-        /// <param name="handshake">Handshake after connect (optional)</param>
-        public Client(IValidator validator = null, ISerializer serializer = null, ClientOptions options = null, byte[] handshake = null) {
+        /// <param name="handshakePayload">Handshake payload to send after connecting (optional)</param>
+        public Client(IValidator validator = null, ISerializer serializer = null, ClientOptions options = null, byte[] handshakePayload = null) {
 #if UNITY_WEBGL && !UNITY_EDITOR
             WebSocketManager.Init();
 #if SHARDY_DEBUG_RAW
@@ -83,7 +80,13 @@ namespace Shardy {
             _validator = validator ?? new DefaultValidator();
             _serializer = serializer ?? new DefaultSerializer();
             _options = options ?? new ClientOptions();
-            _handshake = handshake;
+            _handshake = handshakePayload;
+            if (!Block.Validate(_options.Block)) {
+#if SHARDY_DEBUG_RAW
+                Logger.Error($"maximum block body size must be between 0 and: {Block.MAX_BLOCK_SIZE}", TAG);
+#endif
+                return;
+            }
 #if UNITY_WEBGL && !UNITY_EDITOR
             if (_options.Type == TransportType.Tcp) {
                 Logger.Error($"unable to use TCP transport for WebGL", TAG);
@@ -101,13 +104,14 @@ namespace Shardy {
         /// </summary>
         /// <param name="host">Host to connect</param>
         /// <param name="port">Port to connect</param>
-        public async void Connect(string host, int port) {
-            var status = await _connection.Open(host, port);
-            if (status) {
+        /// <returns>Task that completes after the connection attempt</returns>
+        public async Task Connect(string host, int port) {
+            var isConnectionSucceeded = await _connection.Open(host, port);
+            if (isConnectionSucceeded) {
                 _commander.Start();
             }
-            OnConnect(status);
-            if (_handshake != null && status) {
+            OnConnect(isConnectionSucceeded);
+            if (_handshake != null && isConnectionSucceeded) {
                 Handshake(_handshake);
             }
         }
@@ -122,103 +126,92 @@ namespace Shardy {
         /// <summary>
         /// Send command (event) to server
         /// </summary>
-        /// <param name="command">Command name</param>
-        /// <param name="data">Payload data</param>
-        public void Command(string command, byte[] data = null) {
-            _commander.Command(command, data);
+        /// <param name="commandName">Command name</param>
+        /// <param name="commandPayload">Command payload bytes</param>
+        public void Command(string commandName, byte[] commandPayload = null) {
+            _commander.Command(commandName, commandPayload);
         }
 
         /// <summary>
-        /// Send request to server and wait response
+        /// Send a request to the server and handle its response with a callback
         /// </summary>
-        /// <param name="request">Request name</param>
-        /// <param name="callback">Answer from server</param>
+        /// <param name="requestName">Request name</param>
+        /// <param name="responseCallback">Callback with the response</param>
+        /// <param name="requestPayload">Optional request payload bytes</param>
         /// <returns>Request id</returns>
-        public int Request(string request, Action<PayloadData> callback) {
-            return Request(request, null, callback);
+        public long Request(string requestName, Action<PayloadData> responseCallback, byte[] requestPayload = null) {
+            return _commander.Request(requestName, responseCallback, requestPayload);
         }
 
         /// <summary>
         /// Send response on request from server
         /// </summary>
-        /// <param name="request">Request data</param>
-        /// <param name="data">Data</param>
-        public void Response(PayloadData request, byte[] data = null) {
-            _commander.Response(request, data);
+        /// <param name="requestPayload">Request received from the server</param>
+        /// <param name="responsePayload">Response payload bytes</param>
+        public void Response(PayloadData requestPayload, byte[] responsePayload = null) {
+            _commander.Response(requestPayload, responsePayload);
         }
 
         /// <summary>
         /// Send error on request from server
         /// </summary>
-        /// <param name="request">Request data</param>
-        /// <param name="error">Error message or code</param>
-        /// <param name="data">Data</param>
-        public void Error(PayloadData request, string error, byte[] data = null) {
-            _commander.Error(request, error, data);
-        }
-
-        /// <summary>
-        /// Send request to server and wait response
-        /// </summary>
-        /// <param name="request">Request name</param>
-        /// <param name="data">Payload data</param>
-        /// <param name="callback">Answer from server</param>
-        /// <returns>Request id</returns>
-        public int Request(string request, byte[] data, Action<PayloadData> callback) {
-            return _commander.Request(request, data, callback);
+        /// <param name="requestPayload">Request received from the server</param>
+        /// <param name="errorMessage">Error message or code</param>
+        /// <param name="responsePayload">Response payload bytes</param>
+        public void Error(PayloadData requestPayload, string errorMessage, byte[] responsePayload = null) {
+            _commander.Error(requestPayload, errorMessage, responsePayload);
         }
 
         /// <summary>
         /// Cancel request manually
         /// </summary>
-        /// <param name="id">Request id</param>
-        public void CancelRequest(int id) {
-            _commander.CancelRequest(id);
+        /// <param name="requestId">Request id</param>
+        public void Cancel(long requestId) {
+            _commander.CancelRequest(requestId);
         }
 
         /// <summary>
         /// Handshake to verify connection
         /// </summary>
-        /// <param name="body">Data for handshake</param>
-        public void Handshake(byte[] body = null) {
-            _commander.Handshake(_validator.Handshake(body));
+        /// <param name="handshakePayload">Custom handshake payload</param>
+        public void Handshake(byte[] handshakePayload = null) {
+            _commander.Handshake(_validator.Handshake(handshakePayload));
         }
 
         /// <summary>
         /// Subscribe on command from server
         /// </summary>
-        /// <param name="command">Command name</param>
-        /// <param name="callback">Callback to action</param>
-        public void On(string command, Action<PayloadData> callback) {
-            _commander.AddCommand(command, callback);
+        /// <param name="commandName">Command name</param>
+        /// <param name="commandHandler">Handler for the subscribed command</param>
+        public void On(string commandName, Action<PayloadData> commandHandler) {
+            _commander.AddCommand(commandName, commandHandler);
         }
 
         /// <summary>
         /// Unsubscribe from command
         /// If callback is null -> clear all of them
         /// </summary>
-        /// <param name="command">Command name</param>
-        /// <param name="callback">Callback to unsubscribe</param>
-        public void Off(string command, Action<PayloadData> callback = null) {
-            _commander.CancelCommand(command, callback);
+        /// <param name="commandName">Command name</param>
+        /// <param name="commandHandler">Handler to unsubscribe</param>
+        public void Off(string commandName, Action<PayloadData> commandHandler = null) {
+            _commander.CancelCommand(commandName, commandHandler);
         }
 
         /// <summary>
         /// Subscribe on request from server that wait response
         /// </summary>
-        /// <param name="request">Request name</param>
-        /// <param name="callback">Callback to action</param>
-        public void OnRequest(string request, Action<PayloadData> callback) {
-            _commander.AddOnRequest(request, callback);
+        /// <param name="requestName">Request name</param>
+        /// <param name="requestHandler">Handler for the subscribed request</param>
+        public void OnRequest(string requestName, Action<PayloadData> requestHandler) {
+            _commander.AddOnRequest(requestName, requestHandler);
         }
 
         /// <summary>
         /// Unsubscribe from request from server that wait response
         /// </summary>
-        /// <param name="request">Request name</param>
-        /// <param name="callback">Callback to unsubscribe</param>
-        public void OffRequest(string request) {
-            _commander.CancelOnRequest(request);
+        /// <param name="requestName">Request name</param>
+        public void OffRequest(string requestName) {
+            _commander.CancelOnRequest(requestName);
         }
 
         /// <summary>

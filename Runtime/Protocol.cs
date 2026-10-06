@@ -28,7 +28,6 @@ namespace Shardy {
         Closed
     }
 
-
     /// <summary>
     /// Protocol to manage all data from transport, and send to connection handlers
     /// </summary>
@@ -60,11 +59,18 @@ namespace Shardy {
         readonly Transport _transport = null;
 
         /// <summary>
+        /// Maximum allowed block body size
+        /// </summary>
+        int _maxBlockBodySize = 0;
+
+        /// <summary>
         /// Protocol constructor
         /// </summary>
         /// <param name="connection">Current connection</param>
-        public Protocol(Connection connection) {
-            _transport = new Transport(connection);
+        /// <param name="maxBlockBodySize">Maximum allowed block body size</param>
+        public Protocol(Connection connection, int maxBlockBodySize) {
+            _maxBlockBodySize = maxBlockBodySize;
+            _transport = new Transport(connection, maxBlockBodySize);
             _transport.OnData = (data) => OnData(data);
             _transport.OnDisconnect = () => OnClose();
         }
@@ -80,20 +86,32 @@ namespace Shardy {
         /// <summary>
         /// Send data to transport
         /// </summary>
-        /// <param name="type">Type of block data</param>
-        /// <param name="body">Data for transfer</param>
-        internal void Dispatch(BlockType type, byte[] body = null) {
+        /// <param name="blockType">Type of block to dispatch</param>
+        /// <param name="blockBody">Block body bytes</param>
+        internal void Dispatch(BlockType blockType, byte[] blockBody = null) {
             if (_state == ProtocolState.Closed) {
 #if SHARDY_DEBUG_RAW
                 Logger.Warning("send data to closed protocol", TAG);
 #endif
                 return;
             }
-            body ??= (new byte[0]);
-#if SHARDY_DEBUG_RAW
-            Logger.Info($"dispatch type: {type}, body: {Utils.DataToDebug(body)}", TAG);
+            blockBody ??= (new byte[0]);
+            if (blockBody.Length > _maxBlockBodySize) {
+#if SHARDY_DEBUG_RAW                
+                Logger.Error($"block body exceeds configured limit: {_maxBlockBodySize}", TAG);
 #endif
-            var data = Block.Encode(type, body);
+                return;
+            }
+#if SHARDY_DEBUG_RAW
+            Logger.Info($"dispatch type: {blockType}, body: {Utils.DataToDebug(blockBody)}", TAG);
+#endif
+            var data = Block.Encode(blockType, blockBody);
+            if (data == null) {
+#if SHARDY_DEBUG_RAW
+                Logger.Error($"block body exceeds the maximum: {Block.MAX_BLOCK_SIZE}", TAG);
+#endif
+                return;
+            }
             _transport.Dispatch(data);
         }
 
@@ -176,7 +194,13 @@ namespace Shardy {
             var block = Block.Decode(data);
             if (!Block.Check(block.Type)) {
 #if SHARDY_DEBUG_RAW
-                Logger.Warning($"invalid block type: {block.Type}, state: {_state}", TAG);
+                Logger.Error($"invalid block type: {block.Type}, state: {_state}", TAG);
+#endif
+                return;
+            }
+            if (block.Body == null || block.Body.Length == 0) {
+#if SHARDY_DEBUG_RAW
+                Logger.Warning($"received block with empty data: {block.Type}, state: {_state}", TAG);
 #endif
                 return;
             }

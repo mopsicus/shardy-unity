@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Net.Sockets;
 using System.Net.WebSockets;
 using System.Threading;
@@ -61,6 +62,11 @@ namespace Shardy {
         /// </summary>
         bool _isUsed = false;
 
+        /// <summary>
+        /// Ensures socket shutdown is performed only once per socket instance
+        /// </summary>
+        int _closeFlag = -1;
+
 #if UNITY_IOS
         /// <summary>
         /// Check and convert IP to IPv6 on iOS
@@ -88,6 +94,7 @@ namespace Shardy {
         /// </summary>
         void CreateSocket() {
             _cancellation = new CancellationTokenSource();
+            _closeFlag = 0;
             switch (_type) {
                 case TransportType.Tcp:
                     _tcpsocket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
@@ -210,9 +217,12 @@ namespace Shardy {
         /// Close connection
         /// </summary>
         public void Close() {
+            if (Interlocked.Exchange(ref _closeFlag, 1) != 0) {
+                return;
+            }
             switch (_type) {
                 case TransportType.Tcp:
-                    if (_tcpsocket.Connected) {
+                    if (_tcpsocket != null && _tcpsocket.Connected) {
                         _tcpsocket.Shutdown(SocketShutdown.Both);
                         _tcpsocket.Close();
                     }
@@ -223,11 +233,13 @@ namespace Shardy {
                         _webglsocket.Close(WebSocketCloseCode.Normal);
                     }
 #else
+                    if (_websocket == null) {
+                        break;
+                    }
                     switch (_websocket.State) {
                         case WebSocketState.Open:
-                        case WebSocketState.CloseSent:
                         case WebSocketState.CloseReceived:
-                            _websocket.CloseAsync(WebSocketCloseStatus.NormalClosure, string.Empty, CancellationToken.None);
+                            CloseWebSocketAsync(_websocket);
                             break;
                         default:
                             break;
@@ -240,19 +252,47 @@ namespace Shardy {
         }
 
         /// <summary>
+        /// Close the specified WebSocket connection asynchronously
+        /// </summary>
+        /// <param name="websocket">The WebSocket connection to close</param>
+        /// <returns>A task representing the asynchronous close operation</returns>
+        async Task CloseWebSocketAsync(ClientWebSocket websocket) {
+            try {
+                await websocket.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, string.Empty, CancellationToken.None);
+            } catch (WebSocketException e) {
+                if (websocket.State != WebSocketState.Closed && websocket.State != WebSocketState.Aborted) {
+#if SHARDY_DEBUG_RAW
+                    Logger.Error($"close websocket failed: {e}", TAG);
+#endif
+                }
+            } catch (ObjectDisposedException e) {
+#if SHARDY_DEBUG_RAW
+                Logger.Error($"close websocket failed: {e}", TAG);
+#endif
+            }
+        }
+
+        /// <summary>
         /// Send data to socket
         /// </summary>
         /// <param name="buffer">Data to send</param>
         public async Task Send(byte[] buffer) {
             switch (_type) {
                 case TransportType.Tcp:
-                    await _tcpsocket.SendAsync(buffer, SocketFlags.None).WithCancellation(_cancellation.Token);
+                    var offset = 0;
+                    while (offset < buffer.Length) {
+                        var sent = await _tcpsocket.SendAsync(new ArraySegment<byte>(buffer, offset, buffer.Length - offset), SocketFlags.None).WithCancellation(_cancellation.Token);
+                        if (sent <= 0) {
+                            throw new IOException("tcp connection closed before the full frame was sent");
+                        }
+                        offset += sent;
+                    }
                     break;
                 case TransportType.WebSocket:
 #if UNITY_WEBGL && !UNITY_EDITOR
                     await _webglsocket.Send(buffer).WithCancellation(_cancellation.Token);
 #else
-                    await _websocket.SendAsync(buffer, WebSocketMessageType.Binary, true, CancellationToken.None).WithCancellation(_cancellation.Token);
+                    await _websocket.SendAsync(buffer, WebSocketMessageType.Binary, true, _cancellation.Token);
 #endif
                     break;
                 default:
@@ -272,7 +312,7 @@ namespace Shardy {
 #if UNITY_WEBGL && !UNITY_EDITOR
                     _data.Length = await _webglsocket.Receive(_received).WithCancellation(_cancellation.Token);
 #else
-                    var result = await _websocket.ReceiveAsync(_received, CancellationToken.None).WithCancellation(_cancellation.Token);
+                    var result = await _websocket.ReceiveAsync(_received, _cancellation.Token);
                     _data.Length = (result.MessageType == WebSocketMessageType.Close) ? 0 : result.Count;
 #endif
                     break;
@@ -287,7 +327,9 @@ namespace Shardy {
         /// Cancel operations
         /// </summary>
         public void Cancel() {
-            _cancellation.Cancel();
+            if (_cancellation != null && !_cancellation.IsCancellationRequested) {
+                _cancellation.Cancel();
+            }
         }
 
 #if UNITY_WEBGL && !UNITY_EDITOR

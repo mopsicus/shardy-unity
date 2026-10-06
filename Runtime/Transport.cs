@@ -48,12 +48,22 @@ namespace Shardy {
         /// <summary>
         /// Current transporter state
         /// </summary>
-        TransportState _state = TransportState.Closed;
+        volatile TransportState _state = TransportState.Closed;
+
+        /// <summary>
+        /// Indicates whether the disconnection event has been notified to the listener
+        /// </summary>
+        bool _isDisconnectNotified = false;
 
         /// <summary>
         /// Common buffer array
         /// </summary>
         byte[] _buffer = null;
+
+        /// <summary>
+        /// Current frame header
+        /// </summary>
+        readonly byte[] _head = new byte[Block.BLOCK_HEAD];
 
         /// <summary>
         /// Offset to write buffer
@@ -71,11 +81,17 @@ namespace Shardy {
         Connection _connection = null;
 
         /// <summary>
+        /// Maximum allowed block body size
+        /// </summary>
+        readonly int _maxBlockBodySize = 0;
+
+        /// <summary>
         /// Constructor
         /// </summary>
         /// <param name="connection">Connection instance</param>
-        public Transport(Connection connection) {
+        public Transport(Connection connection, int maxBlockBodySize) {
             _connection = connection;
+            _maxBlockBodySize = maxBlockBodySize;
         }
 
         /// <summary>
@@ -120,6 +136,7 @@ namespace Shardy {
         /// Close this transport
         /// </summary>
         public void Close() {
+            _state = TransportState.Closed;
             try {
                 if (_connection != null) {
                     _connection.Cancel();
@@ -152,7 +169,7 @@ namespace Shardy {
                 ReceiveEnd();
                 return;
             } catch (WebSocketException e) {
-                if (e.WebSocketErrorCode == WebSocketError.ConnectionClosedPrematurely) {
+                if (_state == TransportState.Closed || e.WebSocketErrorCode == WebSocketError.ConnectionClosedPrematurely) {
 #if SHARDY_DEBUG_RAW
                     Logger.Info("receive websocket closed prematurely", TAG);
 #endif
@@ -164,7 +181,11 @@ namespace Shardy {
                 ReceiveEnd();
                 return;
             } catch (Exception e) {
-                if (e.GetBaseException() is WebSocketException exception) {
+                if (_state == TransportState.Closed) {
+#if SHARDY_DEBUG_RAW
+                    Logger.Info("receive operation ended while closing", TAG);
+#endif
+                } else if (e.GetBaseException() is WebSocketException exception) {
                     if (exception.WebSocketErrorCode == WebSocketError.ConnectionClosedPrematurely) {
 #if SHARDY_DEBUG_RAW
                         Logger.Info("receive as websocket closed prematurely", TAG);
@@ -182,6 +203,13 @@ namespace Shardy {
                 ReceiveEnd();
                 return;
             }
+            if (_connection == null) {
+                return;
+            }
+            if (_state == TransportState.Closed) {
+                ReceiveEnd();
+                return;
+            }
             if (!_connection.IsConnected && data.Length > 0) {
 #if SHARDY_DEBUG_RAW
                 Logger.Warning("try receive data with disconnected", TAG);
@@ -193,7 +221,11 @@ namespace Shardy {
 #endif
             if (data.Length > 0) {
                 ProcessData(data.Body, 0, data.Length);
-                Receive();
+                if (_state == TransportState.Closed) {
+                    ReceiveEnd();
+                } else {
+                    Receive();
+                }
             } else {
                 ReceiveEnd();
             }
@@ -205,6 +237,17 @@ namespace Shardy {
         void ReceiveEnd() {
             _state = TransportState.Closed;
             Close();
+            NotifyDisconnect();
+        }
+
+        /// <summary>
+        /// Notify the disconnection event to the listener
+        /// </summary>
+        void NotifyDisconnect() {
+            if (_isDisconnectNotified) {
+                return;
+            }
+            _isDisconnectNotified = true;
             OnDisconnect();
         }
 
@@ -231,12 +274,12 @@ namespace Shardy {
         }
 
         /// <summary>
-        /// Get package size from head
+        /// Calculate frame body size from head
         /// </summary>
         /// <param name="buffer">Head buffer</param>
-        int GetPackageSize(byte[] buffer) {
+        int CalculateFrameBodySize(byte[] buffer) {
             var result = 0;
-            for (var i = 1; i < Block.HEAD_SIZE; i++) {
+            for (var i = 1; i < Block.BLOCK_HEAD; i++) {
                 if (i > 1) {
                     result <<= 8;
                 }
@@ -254,29 +297,35 @@ namespace Shardy {
         /// <returns>Correct header or not</returns>
         bool ReadHead(byte[] bytes, int offset, int limit) {
             var length = limit - offset;
-            var head = new byte[Block.HEAD_SIZE];
-            var size = Block.HEAD_SIZE - _offset;
-            if (length >= size) {
-                WriteBytes(bytes, offset, size, _offset, head);
-                _package = GetPackageSize(head);
-                if (_package < 0) {
+            var size = Block.BLOCK_HEAD - _offset;
+            var bytesToCopy = Math.Min(length, size);
+            WriteBytes(bytes, offset, bytesToCopy, _offset, _head);
+            _offset += bytesToCopy;
+            offset += bytesToCopy;
+            if (_offset == Block.BLOCK_HEAD) {
+                _package = CalculateFrameBodySize(_head);
+                if (_package > _maxBlockBodySize) {
 #if SHARDY_DEBUG_RAW
-                    Logger.Warning($"invalid package size: {_package}", TAG);
+                    Logger.Warning($"frame body size exceeds limit: {_package}", TAG);
 #endif
-                    size = 0;
+                    _state = TransportState.Closed;
+                    _connection.Destroy();
+                    NotifyDisconnect();
+                    return false;
                 }
-                _buffer = new byte[Block.HEAD_SIZE + _package];
-                WriteBytes(head, 0, Block.HEAD_SIZE, _buffer);
-                offset += size;
-                _offset = Block.HEAD_SIZE;
+                _buffer = new byte[Block.BLOCK_HEAD + _package];
+                WriteBytes(_head, 0, Block.BLOCK_HEAD, _buffer);
+                _offset = Block.BLOCK_HEAD;
                 _state = TransportState.Body;
-                if (offset <= limit) {
+                if (_package == 0) {
+                    OnData(_buffer);
+                    Reset();
+                }
+                if (offset < limit) {
                     ProcessData(bytes, offset, limit);
                 }
                 return true;
             } else {
-                WriteBytes(bytes, offset, length, _offset, head);
-                _offset += length;
                 return false;
             }
         }
@@ -288,7 +337,7 @@ namespace Shardy {
         /// <param name="offset">Offet to read</param>
         /// <param name="limit">Length to read</param>
         void ReadBody(byte[] bytes, int offset, int limit) {
-            var length = _package + Block.HEAD_SIZE - _offset;
+            var length = _package + Block.BLOCK_HEAD - _offset;
             if ((offset + length) <= limit) {
                 WriteBytes(bytes, offset, length, _offset, _buffer);
                 offset += length;
@@ -313,6 +362,7 @@ namespace Shardy {
             if (_state != TransportState.Closed) {
                 _state = TransportState.Head;
             }
+            Array.Clear(_head, 0, _head.Length);
         }
 
         /// <summary>

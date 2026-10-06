@@ -25,10 +25,10 @@ namespace Shardy {
         /// </summary>
         /// <param name="type">Block type</param>
         /// <param name="body">Data for block</param>
-        public BlockData(BlockType type, byte[] body) {
-            Type = type;
-            Length = body.Length;
-            Body = body;
+        public BlockData(BlockType blockType, byte[] blockBody) {
+            Type = blockType;
+            Length = blockBody.Length;
+            Body = blockBody;
         }
     }
 }

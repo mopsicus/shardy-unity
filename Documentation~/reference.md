@@ -7,11 +7,11 @@ Block is composed of two parts: **header** and **body**. The header part describ
 ## Structure
 
 *type* – block type, 1 byte
-- 0x01: handshake – handshake request from client to server and handshake response
-- 0x02: handshake acknowledgement – handshake acknowledgement on request
-- 0x03: heartbeat – empty block for check connection heartbeat
-- 0x04: data – block with some data
-- 0x05: kick – disconnect signal
+- 0x00: handshake – handshake request from client to server and handshake response
+- 0x01: handshake acknowledgement – handshake acknowledgement on request
+- 0x02: heartbeat – empty block for check connection heartbeat
+- 0x03: data – block with some data
+- 0x04: kick – disconnect signal
   
 *length* – length of body, 3 bytes big-endian integer
 
@@ -19,7 +19,9 @@ Block is composed of two parts: **header** and **body**. The header part describ
 
 All transmitted data encoded to byte array and decoded to [`BlockData`](#blockdata) in [Protocol](#️-protocol), from where it is futher passed to [Commander](#-commander).
 
-`Block` contains 3 static methods:
+Block headers are 4 bytes. The three-byte big-endian body length permits up to `0xFFFFFF` bytes; the default client limit is 1 MiB. Set `ClientOptions.Block` to match a server configured with a custom block limit.
+
+`Block` exposes the following constants and static methods:
 
 ```csharp
 /// <summary>
@@ -46,6 +48,16 @@ public static BlockData Decode(byte[] data);
 /// <param name="type">Byte index for BlockType</param>
 /// <returns>Is correct block or not</returns>
 public static bool Check(BlockType type);
+
+/// <summary>
+/// Validate a maximum block body size
+/// </summary>
+public static bool Validate(int blockBodySize);
+```
+
+```csharp
+public const int BLOCK_HEAD = 4;
+public const int MAX_BLOCK_SIZE = 0xFFFFFF;
 ```
 
 ## BlockData
@@ -141,8 +153,8 @@ The `Client` constructor receives 4 parameters:
 /// <param name="validator">Validator</param>
 /// <param name="serializer">Serializer</param>
 /// <param name="options">Client options (optional)</param>
-/// <param name="handshake">Handshake after connect (optional)</param>
-public Client(IValidator validator, ISerializer serializer, ClientOptions options = null, byte[] handshake = null);
+/// <param name="handshakePayload">Handshake payload to send after connecting (optional)</param>
+public Client(IValidator validator = null, ISerializer serializer = null, ClientOptions options = null, byte[] handshakePayload = null);
 ```
 
 By default `Client` uses the `TCP` transport type, but this can be changed to `WebSocket` via [`ClientOptions`](#clientoptions).
@@ -157,7 +169,7 @@ Available methods:
 /// </summary>
 /// <param name="host">Host to connect</param>
 /// <param name="port">Port to connect</param>
-public async void Connect(string host, int port);
+public Task Connect(string host, int port);
 
 /// <summary>
 /// Disconnect from server
@@ -167,82 +179,73 @@ public void Disconnect();
 /// <summary>
 /// Send command (event) to server
 /// </summary>
-/// <param name="command">Command name</param>
-/// <param name="data">Payload data</param>
-public void Command(string command, byte[] data = null);
+/// <param name="commandName">Command name</param>
+/// <param name="commandPayload">Command payload bytes</param>
+public void Command(string commandName, byte[] commandPayload = null);
 
 /// <summary>
-/// Send request to server and wait response
+/// Send a request and handle its response in a callback
 /// </summary>
-/// <param name="request">Request name</param>
-/// <param name="callback">Answer from server</param>
+/// <param name="requestName">Request name</param>
+/// <param name="responseCallback">Callback with the response</param>
+/// <param name="requestPayload">Optional request payload bytes</param>
 /// <returns>Request id</returns>
-public int Request(string request, Action<PayloadData> callback);
+public long Request(string requestName, Action<PayloadData> responseCallback, byte[] requestPayload = null);
 
 /// <summary>
 /// Send response on request from server
 /// </summary>
-/// <param name="request">Request data</param>
-/// <param name="data">Data</param>
-public void Response(PayloadData request, byte[] data = null);
+/// <param name="requestPayload">Request received from the server</param>
+/// <param name="responsePayload">Response payload bytes</param>
+public void Response(PayloadData requestPayload, byte[] responsePayload = null);
 
 /// <summary>
 /// Send error on request from server
 /// </summary>
-/// <param name="request">Request data</param>
-/// <param name="error">Error message or code</param>
-/// <param name="data">Data</param>
-public void Error(PayloadData request, string error, byte[] data = null);
-
-/// <summary>
-/// Send request to server and wait response
-/// </summary>
-/// <param name="request">Request name</param>
-/// <param name="data">Payload data</param>
-/// <param name="callback">Answer from server</param>
-/// <returns>Request id</returns>
-public int Request(string request, byte[] data, Action<PayloadData> callback);
+/// <param name="requestPayload">Request received from the server</param>
+/// <param name="errorMessage">Error message or code</param>
+/// <param name="responsePayload">Response payload bytes</param>
+public void Error(PayloadData requestPayload, string errorMessage, byte[] responsePayload = null);
 
 /// <summary>
 /// Cancel request manually
 /// </summary>
-/// <param name="id">Request id</param>
-public void CancelRequest(int id);
+/// <param name="requestId">Request id</param>
+public void Cancel(long requestId);
 
 /// <summary>
 /// Handshake to verify connection
 /// </summary>
-/// <param name="body">Data for handshake</param>
-public void Handshake(byte[] body = null);
+/// <param name="handshakePayload">Custom handshake payload</param>
+public void Handshake(byte[] handshakePayload = null);
 
 /// <summary>
 /// Subscribe on command from server
 /// </summary>
-/// <param name="command">Command name</param>
-/// <param name="callback">Callback to action</param>
-public void On(string command, Action<PayloadData> callback);
+/// <param name="commandName">Command name</param>
+/// <param name="commandHandler">Handler for the subscribed command</param>
+public void On(string commandName, Action<PayloadData> commandHandler);
 
 /// <summary>
 /// Unsubscribe from command
 /// If callback is null -> clear all of them
 /// </summary>
-/// <param name="command">Command name</param>
-/// <param name="callback">Callback to unsubscribe</param>
-public void Off(string command, Action<PayloadData> callback = null);
+/// <param name="commandName">Command name</param>
+/// <param name="commandHandler">Handler to unsubscribe</param>
+public void Off(string commandName, Action<PayloadData> commandHandler = null);
 
 /// <summary>
 /// Subscribe on request from server that wait response
 /// </summary>
-/// <param name="request">Request name</param>
-/// <param name="callback">Callback to action</param>
-public void OnRequest(string request, Action<PayloadData> callback);
+/// <param name="requestName">Request name</param>
+/// <param name="requestHandler">Handler for the subscribed request</param>
+public void OnRequest(string requestName, Action<PayloadData> requestHandler);
 
 /// <summary>
 /// Unsubscribe from request from server that wait response
 /// </summary>
-/// <param name="request">Request name</param>
-/// <param name="callback">Callback to unsubscribe</param>
-public void OffRequest(string request);
+/// <param name="requestName">Request name</param>
+public void OffRequest(string requestName);
 
 /// <summary>
 /// Destroy all
@@ -275,7 +278,7 @@ There is also a property to check the current state of the connection:
 /// <summary>
 /// Is client connected
 /// </summary>
-public bool IsConnected;
+public bool IsConnected { get; }
 ```
 
 ## ClientOptions
@@ -304,6 +307,11 @@ public class ClientOptions {
     public int BufferSize = 1024;
 
     /// <summary>
+    /// Maximum block body size in bytes; default is 1 MiB
+    /// </summary>
+    public int Block = global::Shardy.Block.DEFAULT_BLOCK_SIZE;
+
+    /// <summary>
     /// Timeout for RPC request (ms)
     /// </summary>
     public float RequestTimeout = 10000f;
@@ -325,14 +333,29 @@ public class ClientOptions {
     /// Options constructor
     /// </summary>
     /// <param name="type">Transport type</param>
-    /// <param name="buffer">Transport buffer size, Kb</param>
-    /// <param name="timeout">Timeout for RPC request, ms</param>
-    /// <param name="pulse">Interval for checking server, ms</param>
-    public ClientOptions(TransportType type, int buffer, float timeout, float pulse) {
+    /// <param name="bufferSize">Transport buffer size, bytes</param>
+    /// <param name="requestTimeout">Timeout for RPC request, ms</param>
+    /// <param name="pulseInterval">Interval for checking server, ms</param>
+    public ClientOptions(TransportType type, int bufferSize, float requestTimeout, float pulseInterval) {
         Type = type;
-        BufferSize = buffer;
-        RequestTimeout = timeout;
-        PulseInterval = pulse;
+        BufferSize = bufferSize;
+        RequestTimeout = requestTimeout;
+        PulseInterval = pulseInterval;
+    }
+
+    /// <summary>
+    /// Options constructor with a custom maximum block body size
+    /// </summary>
+    /// <param name="bufferSize">Transport buffer size, bytes</param>
+    /// <param name="requestTimeout">Timeout for RPC request, ms</param>
+    /// <param name="pulseInterval">Interval for checking server, ms</param>
+    /// <param name="block">Maximum block body size in bytes</param>
+    public ClientOptions(TransportType type, int bufferSize, float requestTimeout, float pulseInterval, int block) {
+        Type = type;
+        BufferSize = bufferSize;
+        RequestTimeout = requestTimeout;
+        PulseInterval = pulseInterval;
+        Block = block;
     }
 }
 ```
@@ -352,63 +375,62 @@ public void Start();
 /// <summary>
 /// Add callback for request
 /// </summary>
-/// <param name="id">Request id</param>
-/// <param name="command">Request command</param>
-/// <param name="param">Request's params</param>
-/// <param name="callback">Callback for request</param>
-void AddRequest(int id, string command, byte[] param, Action<PayloadData> callback);
+/// <param name="requestId">Request id</param>
+/// <param name="requestName">Request name</param>
+/// <param name="responseCallback">Callback for request</param>
+void AddRequest(long requestId, string requestName, Action<PayloadData> responseCallback);
 
 /// <summary>
 /// Remove request from list
 /// </summary>
-/// <param name="id">Request id</param>
-public void CancelRequest(int id);
+/// <param name="requestId">Request id</param>
+public void CancelRequest(long requestId);
 
 /// <summary>
 /// Subscribe callback on command
 /// </summary>
-/// <param name="command">Command name</param>
-/// <param name="callback">Callback for command</param>
-public void AddCommand(string command, Action<PayloadData> callback);
+/// <param name="commandName">Command name</param>
+/// <param name="commandHandler">Handler for the command</param>
+public void AddCommand(string commandName, Action<PayloadData> commandHandler);
 
 /// <summary>
 /// Unsubscribe callback from command
 /// If callback is null -> clear all of them
 /// </summary>
-/// <param name="command">Command name</param>
-/// <param name="callback">Callback for command</param>
-public void CancelCommand(string command, Action<PayloadData> callback);
+/// <param name="commandName">Command name</param>
+/// <param name="commandHandler">Handler to remove</param>
+public void CancelCommand(string commandName, Action<PayloadData> commandHandler);
 
 /// <summary>
 /// Subscribe to request from server that wait response
 /// </summary>
-/// <param name="request">Request name</param>
-/// <param name="callback">Callback on RPC</param>
-public void AddOnRequest(string request, Action<PayloadData> callback);
+/// <param name="requestName">Request name</param>
+/// <param name="requestHandler">Handler for the request</param>
+public void AddOnRequest(string requestName, Action<PayloadData> requestHandler);
 
 /// <summary>
 /// Unsubscribe from request from server that wait response
 /// </summary>
-/// <param name="request">Request name</param>
-public void CancelOnRequest(string request);
+/// <param name="requestName">Request name</param>
+public void CancelOnRequest(string requestName);
 
 /// <summary>
 /// Exec callback for RPC from server
 /// </summary>
-/// <param name="payload">Request data</param>
+/// <param name="payload">Request payload</param>
 public void InvokeOnRequest(PayloadData payload);
 
 /// <summary>
 /// Send handshake
 /// </summary>
-/// <param name="data">Data to handshake</param>
-public void Handshake(byte[] data);
+/// <param name="handshakePayload">Handshake payload bytes</param>
+public void Handshake(byte[] handshakePayload);
 
 /// <summary>
 /// Send acknowledge
 /// </summary>
-/// <param name="data">Data to acknowledge</param>
-public void Acknowledge(byte[] data);
+/// <param name="acknowledgementPayload">Acknowledgement payload bytes</param>
+public void Acknowledge(byte[] acknowledgementPayload);
 
 /// <summary>
 /// Disconnect from server
@@ -418,33 +440,33 @@ public void Disconnect();
 /// <summary>
 /// Send command (event) to server with params
 /// </summary>
-/// <param name="command">Command name</param>
-/// <param name="data">Payload data</param>
-public void Command(string command, byte[] data);
+/// <param name="commandName">Command name</param>
+/// <param name="commandPayload">Command payload bytes</param>
+public void Command(string commandName, byte[] commandPayload);
 
 /// <summary>
-/// Send request to server and wait response
+/// Send a request and handle its response in a callback
 /// </summary>
-/// <param name="request">Request name</param>
-/// <param name="data">Payload data</param>
-/// <param name="callback">Answer from server</param>
+/// <param name="requestName">Request name</param>
+/// <param name="responseCallback">Callback for the response</param>
+/// <param name="requestPayload">Optional request payload bytes</param>
 /// <returns>Request id</returns>
-public int Request(string request, byte[] data, Action<PayloadData> callback);
+public long Request(string requestName, Action<PayloadData> responseCallback, byte[] requestPayload = null);
 
 /// <summary>
 /// Send response on request from server
 /// </summary>
-/// <param name="request">Request data</param>
-/// <param name="data">Data</param>
-public void Response(PayloadData request, byte[] data = null);
+/// <param name="requestPayload">Request received from the server</param>
+/// <param name="responsePayload">Response payload bytes</param>
+public void Response(PayloadData requestPayload, byte[] responsePayload = null);
 
 /// <summary>
 /// Send error on request from server
 /// </summary>
-/// <param name="request">Request data</param>
-/// <param name="error">Error message or code</param>
-/// <param name="data">Data</param>
-public void Error(PayloadData request, string error, byte[] data = null);
+/// <param name="requestPayload">Request received from the server</param>
+/// <param name="errorMessage">Error message or code</param>
+/// <param name="responsePayload">Response payload bytes</param>
+public void Error(PayloadData requestPayload, string errorMessage, byte[] responsePayload = null);
 
 /// <summary>
 /// Clear all events
@@ -662,27 +684,27 @@ static string GetColor(LogColor color) {
 /// Encode data for transfer
 /// </summary>
 /// <param name="serializer">Service serializer</param>
-/// <param name="type">Type of data</param>
-/// <param name="name">Request name</param>
-/// <param name="id">Request id</param>
-/// <param name="data">Data</param>
-/// <param name="error">Data</param>
+/// <param name="payloadType">Payload type</param>
+/// <param name="payloadName">Command or request name</param>
+/// <param name="requestId">Request id</param>
+/// <param name="payloadData">Payload bytes</param>
+/// <param name="errorMessage">Error message or code</param>
 /// <returns>Encoded data</returns>
-public static byte[] Encode(ISerializer serializer, PayloadType type, string name, int id, byte[] data, string error);
+public static byte[] Encode(ISerializer serializer, PayloadType payloadType, string payloadName, long requestId, byte[] payloadData, string errorMessage);
 
 /// <summary>
 /// Decode received block
 /// </summary>
 /// <param name="serializer">Service serializer</param>
-/// <param name="data">Encoded  data</param>
+/// <param name="encodedPayload">Encoded payload bytes</param>
 /// <returns>Payload data to use in commander</returns>
-public static PayloadData Decode(ISerializer serializer, byte[] data);
+public static PayloadData Decode(ISerializer serializer, byte[] encodedPayload);
 
 /// <summary>
 /// Check payload for available type
 /// </summary>
-/// <param name="payload">Payload data to check</param>
-public static bool Check(PayloadData payload);
+/// <param name="payloadData">Payload data to check</param>
+public static bool Check(PayloadData payloadData);
 ```
 
 The `check` method controls that the received data is correct and available for processing.
@@ -707,7 +729,7 @@ public struct PayloadData {
     /// <summary>
     /// Request id
     /// </summary>
-    public int Id;
+    public long Id;
 
     /// <summary>
     /// Data
@@ -722,17 +744,17 @@ public struct PayloadData {
     /// <summary>
     /// Constructor
     /// </summary>
-    /// <param name="type">Payload type</param>
-    /// <param name="name">Command or request name</param>
-    /// <param name="id">Request id</param>
-    /// <param name="data">Data</param>
-    /// <param name="error">Error message or code</param>
-    public PayloadData(PayloadType type, string name, int id, byte[] data, string error) {
-        Type = type;
-        Id = id;
-        Name = name;
-        Data = data;
-        Error = error;
+    /// <param name="payloadType">Payload type</param>
+    /// <param name="payloadName">Command or request name</param>
+    /// <param name="requestId">Request id</param>
+    /// <param name="payloadData">Payload bytes</param>
+    /// <param name="errorMessage">Error message or code</param>
+    public PayloadData(PayloadType payloadType, string payloadName, long requestId, byte[] payloadData, string errorMessage) {
+        Type = payloadType;
+        Id = requestId;
+        Name = payloadName;
+        Data = payloadData;
+        Error = errorMessage;
     }
 }
 ```
@@ -1120,7 +1142,7 @@ enum WebSocketCloseCode {
 
 # 🎛️ WebSocketManager
 
-`WebSocketManager` is a static private class for managing all [`WebSocket`](#-websocket) connections, only for WebGL builds.
+`WebSocketManager` is an internal static class for managing all [`WebSocket`](#-websocket) connections, only for WebGL builds.
 
 `WebSocketManager` creates websockets in the JS plugin, sets identifiers and callbacks from the plugin to the C# wrapper.
 
@@ -1128,7 +1150,7 @@ enum WebSocketCloseCode {
 /// <summary>
 /// Set debug mode
 /// </summary>
-public static void SetDebug(bool value);
+public static void SetDebug(bool isDebug);
 
 /// <summary>
 /// Set callbacks

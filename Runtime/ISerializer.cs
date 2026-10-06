@@ -8,16 +8,15 @@ namespace Shardy {
         /// <summary>
         /// Serialize data to byte array
         /// </summary>
-        /// <param name="body">Target data</param>
+        /// <param name="payload">Payload to serialize</param>
         /// <returns>Encoded data</returns>
-        byte[] Encode(PayloadData body);
+        byte[] Encode(PayloadData payload);
 
         /// <summary>
         /// Deserialize data
         /// </summary>
-        /// <param name="body">Encoded data</param>
-        /// <returns>Data to use</returns>
-        PayloadData Decode(byte[] body);
-
+        /// <param name="encodedPayload">Serialized payload bytes</param>
+        /// <returns>Decoded payload</returns>
+        PayloadData Decode(byte[] encodedPayload);
     }
 }

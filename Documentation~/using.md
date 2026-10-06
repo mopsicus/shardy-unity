@@ -18,14 +18,14 @@ _client.OnConnect += OnConnect;
 _client.OnDisconnect += OnDisconnect;
 _client.OnReady += OnReady;
 
-void OnConnect(bool status) {
+void OnConnect(bool isConnected) {
 // connect event
-// status is a flag indicating whether the connection is successful or not
+// isConnected indicates whether the connection was successful
 
 // here you can send the handshake data if it was not passed through constructor
 //
 // if handshake data passed through constructor you shouldn't invoke Handshake() method manually
-    if (status) {
+    if (isConnected) {
         var data = Encoding.UTF8.GetBytes("handshake_data");
         _client.Handshake(data);
     }
@@ -49,11 +49,11 @@ _client.Connect("127.0.0.1", 30000);
 > [!NOTE]
 > The general difference between requests and commands that is other side must respond to requests and doesn't respond to commands. So this means that when you make a request, you have a callback with response data. And when you send a command, you are simply notifying the other side about something.
 
-To make a request - just use the `Request` method of the [`Client`](./reference.md#-client) and pass the name of the request:
+To make a request - use `Request` on the [`Client`](./reference.md#-client). It returns a request ID, and the callback receives the response:
 
 ```csharp
 _client.Request("test", (response) => {
-    Console.WriteLine($"received test data: ${response.ToString()}");
+    Console.WriteLine($"received test data: {Utils.DataToString(response.Data)}");
 });
 ```
 
@@ -62,8 +62,8 @@ The second parameter is a callback with response data. You can use it as a lambd
 ```csharp
 _client.Request("test", OnTest);
 
-void OnTest(PayloadData data) {
-    Console.WriteLine($"received test data: ${response.ToString()}");
+void OnTest(PayloadData response) {
+    Console.WriteLine($"received test data: {Utils.DataToString(response.Data)}");
 }
 ```
 
@@ -73,13 +73,13 @@ And of course you can make requests with param:
 
 ```csharp
 var data = Encoding.UTF8.GetBytes("some_data");
-_client.Request("test", data, (response) => {
+_client.Request("test", (response) => {
     if (!string.IsNullOrEmpty(response.Error)) {
         // handle error here
         return;
     }    
-    Console.WriteLine($"received test data: ${response.ToString()}");
-});
+    Console.WriteLine($"received test data: {Utils.DataToString(response.Data)}");
+}, data);
 ```
 
 Shardy accept byte array as param, so you can pass any data to request. Make sure you can deserialize and read this data on the server side 🙄
@@ -149,5 +149,5 @@ _client.OnRequest("status", (data) => {
 And you can also unsubscribe from it:
 
 ```csharp
-_client.OffRequest("status", OnRequestCallback);
+_client.OffRequest("status");
 ```

@@ -3,11 +3,11 @@
 // You can get game server source code here: https://github.com/mopsicus/shardy-tictactoe
 //
 
-using UnityEngine;
 using Shardy;
 using TMPro;
-using UnityEngine.UI;
+using UnityEngine;
 using UnityEngine.SceneManagement;
+using UnityEngine.UI;
 
 public class MenuController : MonoBehaviour {
 
@@ -85,10 +85,10 @@ public class MenuController : MonoBehaviour {
     /// <summary>
     /// Callback on connect with status
     /// </summary>
-    void OnConnect(bool status) {
-        PlayButton.interactable = status;
-        StatusText.text = status ? "Connected" : "Disconnected";
-        if (status) {
+    void OnConnect(bool isConnected) {
+        PlayButton.interactable = isConnected;
+        StatusText.text = isConnected ? "Connected" : "Disconnected";
+        if (isConnected) {
             Connector.Use().Handshake();
         }
     }
@@ -99,7 +99,7 @@ public class MenuController : MonoBehaviour {
     public void Connect() {
         var host = HostInput.text.Trim();
         var port = int.Parse(PortInput.text.Trim());
-        Connector.Use().Connect(host, port);
+        _ = Connector.Use().Connect(host, port);
     }
 
     /// <summary>

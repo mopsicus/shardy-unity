@@ -9,17 +9,17 @@ class TestHandshake : IValidator {
     /// <summary>
     /// Data for acknowledgement
     /// </summary>
-    public byte[] Acknowledgement(byte[] body) {
+    public byte[] Acknowledgement(byte[] handshakePayload) {
         //
         // generate as you wish here
         //        
-        return body;
+        return handshakePayload;
     }
 
     /// <summary>
     /// Data for initial handshake
     /// </summary>
-    public byte[] Handshake(byte[] body = null) {
+    public byte[] Handshake(byte[] customHandshakePayload = null) {
         //
         // generate as you wish here
         //        
@@ -29,7 +29,7 @@ class TestHandshake : IValidator {
     /// <summary>
     /// Verify acknowledgement
     /// </summary>
-    public ValidatorState VerifyAcknowledgement(byte[] body) {
+    public ValidatorState VerifyAcknowledgement(byte[] acknowledgementPayload) {
         //
         // validate as you wish here
         //        

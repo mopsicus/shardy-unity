@@ -1,14 +1,14 @@
 {
     "name": "com.mopsicus.shardy",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "displayName": "Shardy",
-    "description": "Client for Shardy – framework for online games and applications on Node.js. Supports sockets, websockets, WebGL.",
+    "description": "Client for Shardy – framework for online games and applications for Node.js. Supports sockets, websockets, WebGL.",
     "license": "MIT",
     "author": "Mopsicus <mail@mopsicus.ru>",
     "homepage": "https://github.com/mopsicus/shardy-unity",
     "changelogUrl": "https://github.com/mopsicus/shardy-unity/blob/main/CHANGELOG.md",
     "documentationUrl": "https://github.com/mopsicus/shardy-unity/blob/main/Documentation~/index.md",
-    "unity": "2022.3",
+    "unity": "6000.3",
     "keywords": [
       "shardy",
       "framework",

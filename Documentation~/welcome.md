@@ -100,7 +100,7 @@ Let's create a simple project. Do it in your favorite version of Unity, but don'
     ```csharp
     void TestRequest() {
         _client.Request("test", (response) => {
-            Console.WriteLine($"received test data: ${response.ToString()}");
+            Console.WriteLine($"received test data: {Utils.DataToString(response.Data)}");
         });
     }    
     ```

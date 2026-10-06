@@ -78,6 +78,11 @@ namespace Shardy {
         const float DELAY = 10f;
 
         /// <summary>
+        /// Current socket id
+        /// </summary>
+        public int Id => _id;
+
+        /// <summary>
         /// Callback on socket open
         /// </summary>
         public Action OnOpen = delegate { };
@@ -137,6 +142,11 @@ namespace Shardy {
         List<ReceivedData> _buffer = new List<ReceivedData>();
 
         /// <summary>
+        /// Current offset when a WebSocket message is larger than the managed receive buffer
+        /// </summary>
+        int _readOffset = 0;
+
+        /// <summary>
         /// Current socket instance id
         /// </summary>
         protected int _id = -1;
@@ -194,15 +204,6 @@ namespace Shardy {
             Logger.Info("destroy", TAG);
 #endif
             WebSocketManager.wsRemove(_id);
-        }
-
-        /// <summary>
-        /// Current socket id
-        /// </summary>
-        public int Id {
-            get {
-                return _id;
-            }
         }
 
         /// <summary>
@@ -281,9 +282,14 @@ namespace Shardy {
                 await Utils.SetDelay(DELAY);
             }
             var data = _buffer[0];
-            _buffer.RemoveAt(0);
-            Array.Copy(data.Body, 0, buffer, 0, data.Length);
-            return data.Length;
+            var length = Math.Min(buffer.Length, data.Length - _readOffset);
+            Array.Copy(data.Body, _readOffset, buffer, 0, length);
+            _readOffset += length;
+            if (_readOffset >= data.Length) {
+                _buffer.RemoveAt(0);
+                _readOffset = 0;
+            }
+            return length;
         }
     }
 }

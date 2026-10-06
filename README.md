@@ -62,7 +62,7 @@ For a better experience, you can set up an environment for local development. Si
 
 See the sample section to get a [demo app](./Samples~/Demo). This demo shows you how to use client's methods and options. If you want to test your own demo backend, see how to install and launch [service template](https://github.com/mopsicus/shardy-template).
 
-_Tested in Unity 2022.3.x, Android, iOS and WebGL._
+_Tested in Unity 6000.3.x, Android, iOS and WebGL._
 
 <p align="center">
     <picture>
@@ -90,7 +90,7 @@ Request:
 
 ```csharp
 _client.Request("test", (data) => {
-    Console.WriteLine($"received test data: ${data.ToString()}");
+    Console.WriteLine($"received test data: {Utils.DataToString(data.Data)}");
 });
 ```
 
@@ -111,7 +111,7 @@ _client.On("lookup", (data) => {
 Subscribe on request:
 
 ```csharp
-_client.OnRequest(request, (payload) => {
+_client.OnRequest("request", (payload) => {
     Console.WriteLine($"received request data: ${payload.ToString()}");    
     // if comment line below, you will give timeout on your backend
     _client.Response(payload, Encoding.UTF8.GetBytes("some_data_from_client"));
@@ -188,8 +188,8 @@ See [documentation](./Documentation~/index.md) for information on all classes an
 # 🧩 Modules
 
 [FSM](https://github.com/mopsicus/shardy-fsm) – implementation of a finite state machine with flexible API: states, triggers, conditions.
-
 [Signals](https://github.com/mopsicus/shardy-signals) — simple event manager aka eventbus aka pub-sub implementation with `WeakRefence` support.
+
 
 # 🗓️ Plans
 

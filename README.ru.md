@@ -62,7 +62,7 @@ Shardy – это фреймворк для онлайн игр и прилож�
 
 Посмотрите раздел с примерами и скачайте [демо приложение](./Samples~/Demo). Это демо покажет вам как использовать методы клиента и какие есть опции. Если вы хотите использовать для тестов собственный backend, посмотрите как установить и запустить [пример сервиса](https://github.com/mopsicus/shardy-template).
 
-_Протестировано в Unity 2022.3.x, Android, iOS и WebGL._
+_Протестировано в Unity 6000.3.x, Android, iOS и WebGL._
 
 <p align="center">
     <picture>
@@ -90,7 +90,7 @@ _Протестировано в Unity 2022.3.x, Android, iOS и WebGL._
 
 ```csharp
 _client.Request("test", (data) => {
-    Console.WriteLine($"received test data: ${data.ToString()}");
+    Console.WriteLine($"received test data: {Utils.DataToString(data.Data)}");
 });
 ```
 
@@ -111,7 +111,7 @@ _client.On("lookup", (data) => {
 Подписка на запрос с сервера:
 
 ```csharp
-_client.OnRequest(request, (payload) => {
+_client.OnRequest("request", (payload) => {
     Console.WriteLine($"received request data: ${payload.ToString()}");    
     // если закомментировать строку ниже, вы получите таймаут на сервере
     _client.Response(payload, Encoding.UTF8.GetBytes("some_data_from_client"));
@@ -188,8 +188,8 @@ class MyJsonSerializer : ISerializer {
 # 🧩 Модули
 
 [FSM](https://github.com/mopsicus/shardy-fsm) – конечный автомат (finite state machive) с гибким API: состояния, триггеры, условия
-
 [Signals](https://github.com/mopsicus/shardy-signals) — простой менеджер событий aka шина данных (eventbus) aka паттерн публикация-подписка (pub-sub) с поддержкой `WeakRefence`.
+
 
 # 🗓️ Планы
 

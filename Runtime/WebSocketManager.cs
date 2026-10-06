@@ -55,7 +55,7 @@ namespace Shardy {
         /// Set on/off debug mode
         /// </summary>
         [DllImport("__Internal")]
-        public static extern int wsSetDebug(bool value);
+        public static extern int wsSetDebug(bool isDebug);
 
         /// <summary>
         /// Create new websocket instance
@@ -113,8 +113,8 @@ namespace Shardy {
         /// <summary>
         /// Set debug mode
         /// </summary>
-        public static void SetDebug(bool value) {
-            wsSetDebug(value);
+        public static void SetDebug(bool isDebug) {
+            wsSetDebug(isDebug);
         }
 
         /// <summary>

@@ -10,8 +10,8 @@ class TestSerializer : ISerializer {
     /// <summary>
     /// Decode received data to PayloadData
     /// </summary>
-    public PayloadData Decode(byte[] body) {
-        var data = (JsonObject)JsonNode.ParseJsonString(Encoding.UTF8.GetString(body));
+    public PayloadData Decode(byte[] encodedPayload) {
+        var data = (JsonObject)JsonNode.ParseJsonString(Encoding.UTF8.GetString(encodedPayload));
         return new PayloadData((PayloadType)(int)data["type"], data["name"], data["id"], Encoding.UTF8.GetBytes(data["data"]), data["error"]);
     }
 

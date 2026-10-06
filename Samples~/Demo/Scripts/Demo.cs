@@ -108,11 +108,11 @@ public class Demo : MonoBehaviour {
     /// <summary>
     /// Callback on connect with status
     /// </summary>
-    void OnConnect(bool status) {
-        LogText.text += status ? $"< connected\n" : $"< failed\n";
-        StatusText.text = status ? "Connected" : "Disconnected";
-        SwitchControls(status);
-        if (status) {
+    void OnConnect(bool isConnected) {
+        LogText.text += isConnected ? $"< connected\n" : $"< failed\n";
+        StatusText.text = isConnected ? "Connected" : "Disconnected";
+        SwitchControls(isConnected);
+        if (isConnected) {
             _client.Handshake();
         }
     }
@@ -120,22 +120,22 @@ public class Demo : MonoBehaviour {
     /// <summary>
     /// On/off controls
     /// </summary>
-    void SwitchControls(bool value) {
-        ConnectButton.interactable = !value;
+    void SwitchControls(bool isEnabled) {
+        ConnectButton.interactable = !isEnabled;
         foreach (var item in Buttons) {
-            item.interactable = value;
+            item.interactable = isEnabled;
         }
-        DataInput.interactable = value;
+        DataInput.interactable = isEnabled;
     }
 
     /// <summary>
     /// Connect to server
     /// </summary>
-    public void Connect() {
+    public async void Connect() {
         var host = HostInput.text.Trim();
         var port = int.Parse(PortInput.text.Trim());
         LogText.text += $"> connect to: {host}:{port}\n";
-        _client.Connect(host, port);
+        await _client.Connect(host, port);
     }
 
     /// <summary>
@@ -154,10 +154,10 @@ public class Demo : MonoBehaviour {
         PrepareData();
         var request = "status";
         LogText.text += $"> test request: {request}\n";
-        _client.Request(request, _data, (response) => {
+        _client.Request(request, (response) => {
             LogText.text += $"< request data: {Utils.DataToString(response.Data)}\n\n";
             Scroll();
-        });
+        }, _data);
         Scroll();
     }
 
@@ -179,10 +179,10 @@ public class Demo : MonoBehaviour {
         PrepareData();
         var request = "fail";
         LogText.text += $"> test error: {request}\n";
-        _client.Request(request, _data, (response) => {
+        _client.Request(request, (response) => {
             LogText.text += $"< error data: {Utils.DataToString(response.Data)}\n\n";
             Scroll();
-        });
+        }, _data);
         Scroll();
     }
 

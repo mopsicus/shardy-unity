@@ -46,7 +46,7 @@
 - [Pulse](./reference.md#-pulse)
 - [ReceivedData](./reference.md#-receiveddata)
 - [Transport](./reference.md#-transport)
-- [TransportType](./reference.md#-transporttype)
+- [TransportType](./reference.md#transporttype)
 - [Utils](./reference.md#️-utils)
 - [ValidatorState](./reference.md#️-validatorstate)
 - [WebSocket](./reference.md#️-websocket)

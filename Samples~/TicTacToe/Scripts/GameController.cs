@@ -192,9 +192,9 @@ public class GameController : MonoBehaviour {
         json["g"] = _info.GameId;
         json["p"] = _info.PlayerId;
         var data = Encoding.UTF8.GetBytes(json.ToJsonString());
-        Connector.Use().Request(Consts.EXIT_GAME, data, (data) => {
+        Connector.Use().Request(Consts.EXIT_GAME, (data) => {
             SceneManager.LoadScene(Consts.MENU_SCENE);
-        });
+        }, data);
     }
 
     /// <summary>
@@ -237,10 +237,10 @@ public class GameController : MonoBehaviour {
         json["x"] = x;
         json["y"] = y;
         var data = Encoding.UTF8.GetBytes(json.ToJsonString());
-        Connector.Use().Request(Consts.TURN, data, (response) => {
+        Connector.Use().Request(Consts.TURN, (response) => {
             if (!string.IsNullOrEmpty(response.Error)) {
                 SetStatus(response.Error);
             }
-        });
+        }, data);
     }
 }

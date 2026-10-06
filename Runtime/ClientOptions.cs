@@ -16,6 +16,12 @@ namespace Shardy {
         public int BufferSize = 1024;
 
         /// <summary>
+        /// Maximum block body size in bytes
+        /// Configure to match the server
+        /// </summary>
+        public int Block = 1024 * 1024;
+
+        /// <summary>
         /// Timeout for RPC request (ms)
         /// </summary>
         public float RequestTimeout = 10000f;
@@ -37,14 +43,29 @@ namespace Shardy {
         /// Options constructor
         /// </summary>
         /// <param name="type">Transport type</param>
-        /// <param name="buffer">Transport buffer size, Kb</param>
-        /// <param name="timeout">Timeout for RPC request, ms</param>
-        /// <param name="pulse">Interval for checking server, ms</param>
-        public ClientOptions(TransportType type, int buffer, float timeout, float pulse) {
+        /// <param name="bufferSize">Transport buffer size, bytes</param>
+        /// <param name="requestTimeout">Timeout for RPC request, ms</param>
+        /// <param name="pulseInterval">Interval for checking server, ms</param>
+        public ClientOptions(TransportType type, int bufferSize, float requestTimeout, float pulseInterval) {
             Type = type;
-            BufferSize = buffer;
-            RequestTimeout = timeout;
-            PulseInterval = pulse;
+            BufferSize = bufferSize;
+            RequestTimeout = requestTimeout;
+            PulseInterval = pulseInterval;
+        }
+
+        /// <summary>
+        /// Options constructor
+        /// </summary>
+        /// <param name="bufferSize">Transport buffer size, bytes</param>
+        /// <param name="requestTimeout">Timeout for RPC request, ms</param>
+        /// <param name="pulseInterval">Interval for checking server, ms</param>
+        /// <param name="block">Maximum block body size in bytes</param>
+        public ClientOptions(TransportType type, int bufferSize, float requestTimeout, float pulseInterval, int block) {
+            Type = type;
+            BufferSize = bufferSize;
+            RequestTimeout = requestTimeout;
+            PulseInterval = pulseInterval;
+            Block = block;
         }
     }
 }

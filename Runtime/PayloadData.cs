@@ -21,7 +21,7 @@ namespace Shardy {
         /// <summary>
         /// Request id
         /// </summary>
-        public int Id;
+        public long Id;
 
         /// <summary>
         /// Data
@@ -36,17 +36,17 @@ namespace Shardy {
         /// <summary>
         /// Constructor
         /// </summary>
-        /// <param name="type">Payload type</param>
-        /// <param name="name">Command or request name</param>
-        /// <param name="id">Request id</param>
-        /// <param name="data">Data</param>
-        /// <param name="error">Error message or code</param>
-        public PayloadData(PayloadType type, string name, int id, byte[] data, string error) {
-            Type = type;
-            Id = id;
-            Name = name;
-            Data = data;
-            Error = error;
+        /// <param name="payloadType">Payload type</param>
+        /// <param name="payloadName">Command or request name</param>
+        /// <param name="requestId">Request id</param>
+        /// <param name="payloadData">Payload bytes</param>
+        /// <param name="errorMessage">Error message or code</param>
+        public PayloadData(PayloadType payloadType, string payloadName, long requestId, byte[] payloadData, string errorMessage) {
+            Type = payloadType;
+            Id = requestId;
+            Name = payloadName;
+            Data = payloadData;
+            Error = errorMessage;
         }
     }
 }

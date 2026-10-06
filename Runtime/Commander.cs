@@ -27,6 +27,11 @@ namespace Shardy {
         const string TIMEOUT_ERROR = "timeout";
 
         /// <summary>
+        /// Maximum request ID representable exactly by the server's JSON number format
+        /// </summary>
+        const long MAX_SAFE_REQUEST_ID = 9007199254740991L;
+
+        /// <summary>
         /// Callback on disconnect
         /// </summary>
         public Action<DisconnectReason> OnDisconnect = delegate { };
@@ -39,7 +44,7 @@ namespace Shardy {
         /// <summary>
         /// Dictionary of request id and commands
         /// </summary>
-        readonly Dictionary<int, string> _names = null;
+        readonly Dictionary<long, string> _requestNames = null;
 
         /// <summary>
         /// Dictionary of notify command and their callbacks
@@ -47,9 +52,14 @@ namespace Shardy {
         readonly Dictionary<string, List<Action<PayloadData>>> _commands = null;
 
         /// <summary>
+        /// Protects command handlers from concurrent subscription changes while receiving data
+        /// </summary>
+        readonly object _locker = new object();
+
+        /// <summary>
         /// Dictionary of request id and callback
         /// </summary>
-        readonly Dictionary<int, Action<PayloadData>> _callbacks = null;
+        readonly Dictionary<long, Action<PayloadData>> _callbacks = null;
 
         /// <summary>
         /// Dictionary of request name and callback for requests from server
@@ -59,7 +69,7 @@ namespace Shardy {
         /// <summary>
         /// Dictionary of request id and start using time
         /// </summary>
-        readonly Dictionary<int, DateTime> _timeouts = null;
+        readonly Dictionary<long, DateTime> _timeouts = null;
 
         /// <summary>
         /// Protocol instance
@@ -74,7 +84,7 @@ namespace Shardy {
         /// <summary>
         /// Current request counter
         /// </summary>
-        int _counter = 1;
+        long _counter = 0;
 
         /// <summary>
         /// Validator
@@ -112,12 +122,12 @@ namespace Shardy {
             _validator = validator;
             _serializer = serializer;
             _options = options;
-            _names = new Dictionary<int, string>();
+            _requestNames = new Dictionary<long, string>();
             _commands = new Dictionary<string, List<Action<PayloadData>>>();
-            _callbacks = new Dictionary<int, Action<PayloadData>>();
+            _callbacks = new Dictionary<long, Action<PayloadData>>();
             _requests = new Dictionary<string, Action<PayloadData>>();
-            _timeouts = new Dictionary<int, DateTime>();
-            _protocol = new Protocol(connection);
+            _timeouts = new Dictionary<long, DateTime>();
+            _protocol = new Protocol(connection, options.Block);
             _protocol.OnBlock = (block) => OnBlock(block);
             _protocol.OnDisconnect = () => OnClose();
         }
@@ -136,14 +146,18 @@ namespace Shardy {
         /// Timer check for timeout RPC call
         /// </summary>
         void TimeoutCheck() {
-            foreach (var id in _timeouts.Keys) {
-                var span = DateTime.Now - _timeouts[id];
-                var timeout = (int)span.TotalMilliseconds;
-                if (timeout > _options.RequestTimeout) {
+            var requestIds = new List<long>(_timeouts.Keys);
+            foreach (var requestId in requestIds) {
+                if (!_timeouts.TryGetValue(requestId, out var requestStart)) {
+                    continue;
+                }
+                var span = DateTime.Now - requestStart;
+                if (span.TotalMilliseconds > _options.RequestTimeout) {
                     var payload = new PayloadData();
                     payload.Type = PayloadType.Response;
-                    payload.Id = id;
-                    payload.Name = _names[id];
+                    payload.Id = requestId;
+                    payload.Name = _requestNames[requestId];
+                    payload.Data = new byte[0];
                     payload.Error = TIMEOUT_ERROR;
                     OnPayload(payload);
                 }
@@ -153,42 +167,41 @@ namespace Shardy {
         /// <summary>
         /// Add callback for request
         /// </summary>
-        /// <param name="id">Request id</param>
-        /// <param name="command">Request command</param>
-        /// <param name="param">Request's params</param>
-        /// <param name="callback">Callback for request</param>
-        void AddRequest(int id, string command, byte[] param, Action<PayloadData> callback) {
-            if (_callbacks.ContainsKey(id)) {
+        /// <param name="requestId">Request id</param>
+        /// <param name="requestName">Request name</param>
+        /// <param name="responseCallback">Callback for request</param>
+        void AddRequest(long requestId, string requestName, Action<PayloadData> responseCallback) {
+            if (_callbacks.ContainsKey(requestId)) {
 #if SHARDY_DEBUG_RAW
-                Logger.Warning($"callback already exists: {id}, method: {_callbacks[id].Method}", TAG);
+                Logger.Warning($"callback already exists: {requestId}, method: {_callbacks[requestId].Method}", TAG);
 #endif
             } else {
-                if (id <= 0) {
+                if (requestId < 0 || requestId > MAX_SAFE_REQUEST_ID) {
 #if SHARDY_DEBUG_RAW
-                    Logger.Warning($"callback id can't be less 1: {id}", TAG);
+                    Logger.Warning($"request id is outside the safe integer range: {requestId}", TAG);
 #endif
                     return;
                 }
-                _names.Add(id, command);
-                _callbacks.Add(id, callback);
-                _timeouts.Add(id, DateTime.Now);
+                _requestNames.Add(requestId, requestName);
+                _callbacks.Add(requestId, responseCallback);
+                _timeouts.Add(requestId, DateTime.Now);
             }
         }
 
         /// <summary>
         /// Remove request from list
         /// </summary>
-        /// <param name="id">Request id</param>
-        public void CancelRequest(int id) {
-            if (!_callbacks.ContainsKey(id)) {
+        /// <param name="requestId">Request id</param>
+        public void CancelRequest(long requestId) {
+            if (!_callbacks.ContainsKey(requestId)) {
 #if SHARDY_DEBUG_RAW
-                Logger.Warning($"unknown callback to cancel: {id}", TAG);
+                Logger.Warning($"unknown callback to cancel: {requestId}", TAG);
 #endif
                 return;
             }
-            _names.Remove(id);
-            _callbacks.Remove(id);
-            _timeouts.Remove(id);
+            _requestNames.Remove(requestId);
+            _callbacks.Remove(requestId);
+            _timeouts.Remove(requestId);
         }
 
         /// <summary>
@@ -202,29 +215,41 @@ namespace Shardy {
 #endif
                 return;
             }
+            var callback = _callbacks[payload.Id];
+            RemoveRequest(payload.Id);
             try {
-                _callbacks[payload.Id].Invoke(payload);
+                callback.Invoke(payload);
             } catch (Exception e) {
 #if SHARDY_DEBUG_RAW
                 Logger.Error($"callback execute failed: {payload.Id}, error: {e}", TAG);
 #endif       
             }
-            CancelRequest(payload.Id);
+        }
+
+        /// <summary>
+        /// Remove a request from the internal tracking lists
+        /// </summary>
+        /// <param name="requestId">ID of the request to remove</param>
+        void RemoveRequest(long requestId) {
+            _requestNames.Remove(requestId);
+            _callbacks.Remove(requestId);
+            _timeouts.Remove(requestId);
         }
 
         /// <summary>
         /// Subscribe callback on command
         /// </summary>
-        /// <param name="command">Command name</param>
-        /// <param name="callback">Callback for command</param>
-        public void AddCommand(string command, Action<PayloadData> callback) {
-            if (_commands.TryGetValue(command, out var list)) {
-                list.Add(callback);
-                _commands[command] = list;
-            } else {
-                list = new List<Action<PayloadData>>();
-                list.Add(callback);
-                _commands.Add(command, list);
+        /// <param name="commandName">Command name</param>
+        /// <param name="commandHandler">Handler for the command</param>
+        public void AddCommand(string commandName, Action<PayloadData> commandHandler) {
+            lock (_locker) {
+                if (_commands.TryGetValue(commandName, out var list)) {
+                    list.Add(commandHandler);
+                } else {
+                    list = new List<Action<PayloadData>>();
+                    list.Add(commandHandler);
+                    _commands.Add(commandName, list);
+                }
             }
         }
 
@@ -232,25 +257,25 @@ namespace Shardy {
         /// Unsubscribe callback from command
         /// If callback is null -> clear all of them
         /// </summary>
-        /// <param name="command">Command name</param>
-        /// <param name="callback">Callback for command</param>
-        public void CancelCommand(string command, Action<PayloadData> callback) {
-            if (!_commands.ContainsKey(command)) {
+        /// <param name="commandName">Command name</param>
+        /// <param name="commandHandler">Handler to remove</param>
+        public void CancelCommand(string commandName, Action<PayloadData> commandHandler) {
+            lock (_locker) {
+                if (!_commands.TryGetValue(commandName, out var list)) {
 #if SHARDY_DEBUG_RAW
-                Logger.Warning($"unknown command to unsubscribe: {command}", TAG);
+                    Logger.Warning($"unknown command to unsubscribe: {commandName}", TAG);
 #endif
-                return;
-            }
-            if (callback == null) {
-                _commands[command].Clear();
-            } else {
-                var list = _commands[command];
-                for (var i = list.Count - 1; i >= 0; i--) {
-                    if (list[i].Equals(callback)) {
-                        list.RemoveAt(i);
-                        break;
+                    return;
+                }
+                if (commandHandler == null) {
+                    list.Clear();
+                } else {
+                    for (var i = list.Count - 1; i >= 0; i--) {
+                        if (list[i].Equals(commandHandler)) {
+                            list.RemoveAt(i);
+                            break;
+                        }
                     }
-                    _commands[command] = list;
                 }
             }
         }
@@ -260,14 +285,17 @@ namespace Shardy {
         /// </summary>
         /// <param name="payload">Data for command</param>
         void InvokeCommand(PayloadData payload) {
-            if (!_commands.ContainsKey(payload.Name)) {
+            Action<PayloadData>[] handlers;
+            lock (_locker) {
+                if (!_commands.TryGetValue(payload.Name, out var list)) {
 #if SHARDY_DEBUG_RAW
-                Logger.Warning($"unknown command to execute: {payload.Name}", TAG);
+                    Logger.Warning($"unknown command to execute: {payload.Name}", TAG);
 #endif
-                return;
+                    return;
+                }
+                handlers = list.ToArray();
             }
-            var list = _commands[payload.Name];
-            foreach (var action in list) {
+            foreach (var action in handlers) {
                 try {
                     action.Invoke(payload);
                 } catch (Exception e) {
@@ -281,30 +309,30 @@ namespace Shardy {
         /// <summary>
         /// Subscribe to request from server that wait response
         /// </summary>
-        /// <param name="request">Request name</param>
-        /// <param name="callback">Callback on RPC</param>
-        public void AddOnRequest(string request, Action<PayloadData> callback) {
-            if (_requests.ContainsKey(request)) {
+        /// <param name="requestName">Request name</param>
+        /// <param name="requestHandler">Handler for the request</param>
+        public void AddOnRequest(string requestName, Action<PayloadData> requestHandler) {
+            if (_requests.ContainsKey(requestName)) {
 #if SHARDY_DEBUG_RAW
-                Logger.Warning($"request already exists: {request}, method: {_requests[request].Method}", TAG);
+                Logger.Warning($"request already exists: {requestName}, method: {_requests[requestName].Method}", TAG);
 #endif
             } else {
-                _requests.Add(request, callback);
+                _requests.Add(requestName, requestHandler);
             }
         }
 
         /// <summary>
         /// Unsubscribe from request from server that wait response
         /// </summary>
-        /// <param name="request">Request name</param>
-        public void CancelOnRequest(string request) {
-            if (!_requests.ContainsKey(request)) {
+        /// <param name="requestName">Request name</param>
+        public void CancelOnRequest(string requestName) {
+            if (!_requests.ContainsKey(requestName)) {
 #if SHARDY_DEBUG_RAW
-                Logger.Warning($"unknown request to cancel: {request}", TAG);
+                Logger.Warning($"unknown request to cancel: {requestName}", TAG);
 #endif
                 return;
             }
-            _requests.Remove(request);
+            _requests.Remove(requestName);
         }
 
         /// <summary>
@@ -316,6 +344,7 @@ namespace Shardy {
 #if SHARDY_DEBUG_RAW
                 Logger.Warning($"unknown request to execute: {payload.Name}", TAG);
 #endif
+                Error(payload, "unknown request");
                 return;
             }
             try {
@@ -324,6 +353,7 @@ namespace Shardy {
 #if SHARDY_DEBUG_RAW
                 Logger.Error($"request execute failed: {payload.Name}, error: {e}", TAG);
 #endif     
+                Error(payload, e.Message);
             }
         }
 
@@ -341,22 +371,22 @@ namespace Shardy {
         /// Send handshake
         /// </summary>
         /// <param name="data">Data to handshake</param>
-        public void Handshake(byte[] data) {
+        public void Handshake(byte[] handshakePayload) {
 #if SHARDY_DEBUG
             Logger.Info("-> handshake");
 #endif
-            _protocol.Handshake(data);
+            _protocol.Handshake(handshakePayload);
         }
 
         /// <summary>
         /// Send acknowledge
         /// </summary>
         /// <param name="data">Data to acknowledge</param>
-        public void Acknowledge(byte[] data) {
+        public void Acknowledge(byte[] acknowledgementPayload) {
 #if SHARDY_DEBUG
             Logger.Info("-> acknowledge");
 #endif
-            _protocol.Acknowledge(data);
+            _protocol.Acknowledge(acknowledgementPayload);
         }
 
         /// <summary>
@@ -372,58 +402,40 @@ namespace Shardy {
         /// <summary>
         /// Send command (event) to server with params
         /// </summary>
-        /// <param name="command">Command name</param>
-        /// <param name="data">Payload data</param>
-        public void Command(string command, byte[] data) {
+        /// <param name="commandName">Command name</param>
+        /// <param name="commandPayload">Command payload bytes</param>
+        public void Command(string commandName, byte[] commandPayload) {
 #if SHARDY_DEBUG
-            Logger.Info($"-> command: {command}");
+            Logger.Info($"-> command: {commandName}");
 #endif
-            var payload = Payload.Encode(_serializer, PayloadType.Command, command, 0, data, "");
+            var payload = Payload.Encode(_serializer, PayloadType.Command, commandName, 0, commandPayload, "");
             _protocol.Send(payload);
-        }
-
-        /// <summary>
-        /// Send request to server and wait response
-        /// </summary>
-        /// <param name="request">Request name</param>
-        /// <param name="data">Payload data</param>
-        /// <param name="callback">Answer from server</param>
-        /// <returns>Request id</returns>
-        public int Request(string request, byte[] data, Action<PayloadData> callback) {
-#if SHARDY_DEBUG
-            Logger.Info($"-> request: {_counter}.{request}");
-#endif
-            var payload = Payload.Encode(_serializer, PayloadType.Request, request, _counter, data, "");
-            AddRequest(_counter, request, data, callback);
-            _protocol.Send(payload);
-            _counter++;
-            return _counter;
         }
 
         /// <summary>
         /// Send response on request from server
         /// </summary>
-        /// <param name="request">Request data</param>
-        /// <param name="data">Data</param>
-        public void Response(PayloadData request, byte[] data = null) {
+        /// <param name="requestPayload">Request received from the server</param>
+        /// <param name="responsePayload">Response payload bytes</param>
+        public void Response(PayloadData requestPayload, byte[] responsePayload = null) {
 #if SHARDY_DEBUG
-            Logger.Info($"-> response: {request.Id}.{request.Name}");
+            Logger.Info($"-> response: {requestPayload.Id}.{requestPayload.Name}");
 #endif
-            var payload = Payload.Encode(_serializer, PayloadType.Response, request.Name, request.Id, data, "");
+            var payload = Payload.Encode(_serializer, PayloadType.Response, requestPayload.Name, requestPayload.Id, responsePayload, "");
             _protocol.Send(payload);
         }
 
         /// <summary>
         /// Send error on request from server
         /// </summary>
-        /// <param name="request">Request data</param>
-        /// <param name="error">Error message or code</param>
-        /// <param name="data">Data</param>
-        public void Error(PayloadData request, string error, byte[] data = null) {
+        /// <param name="requestPayload">Request received from the server</param>
+        /// <param name="errorMessage">Error message or code</param>
+        /// <param name="responsePayload">Response payload bytes</param>
+        public void Error(PayloadData requestPayload, string errorMessage, byte[] responsePayload = null) {
 #if SHARDY_DEBUG
-            Logger.Info($"-> error: {request.Id}.{request.Name}, error: {error}");
+            Logger.Info($"-> error: {requestPayload.Id}.{requestPayload.Name}, error: {errorMessage}");
 #endif
-            var payload = Payload.Encode(_serializer, PayloadType.Response, request.Name, request.Id, data, error);
+            var payload = Payload.Encode(_serializer, PayloadType.Response, requestPayload.Name, requestPayload.Id, responsePayload, errorMessage);
             _protocol.Send(payload);
         }
 
@@ -432,12 +444,59 @@ namespace Shardy {
         /// </summary>
         public void Clear() {
             _cancellation.Cancel();
-            _names.Clear();
+            var pendingCallbacks = new List<KeyValuePair<long, Action<PayloadData>>>(_callbacks);
+            var pendingNames = new Dictionary<long, string>(_requestNames);
+            _requestNames.Clear();
             _callbacks.Clear();
             _timeouts.Clear();
-            _commands.Clear();
+            lock (_locker) {
+                _commands.Clear();
+            }
             _requests.Clear();
             _pulse?.Clear();
+            foreach (var pending in pendingCallbacks) {
+                if (pendingNames.TryGetValue(pending.Key, out var requestName)) {
+                    try {
+                        pending.Value.Invoke(new PayloadData(PayloadType.Response, requestName, pending.Key, new byte[0], "closed"));
+                    } catch (Exception e) {
+#if SHARDY_DEBUG_RAW
+                        Logger.Error($"request callback failed: {e}", TAG);
+#endif
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Send a request to the server and register a response callback
+        /// </summary>
+        /// <param name="requestName">Name of the request</param>
+        /// <param name="responseCallback">Callback to handle the response</param>
+        /// <param name="requestPayload">Payload of the request</param>
+        /// <returns>Request ID</returns>
+        public long Request(string requestName, Action<PayloadData> responseCallback, byte[] requestPayload = null) {
+            if (_counter > MAX_SAFE_REQUEST_ID) {
+#if SHARDY_DEBUG_RAW
+                Logger.Warning($"maximum safe request id has been reached: {_counter}", TAG);
+#endif
+                return -1;
+            }
+            var requestId = _counter++;
+#if SHARDY_DEBUG
+            Logger.Info($"-> request: {requestId}.{requestName}");
+#endif
+            var payload = Payload.Encode(_serializer, PayloadType.Request, requestName, requestId, requestPayload, string.Empty);
+            AddRequest(requestId, requestName, responseCallback);
+            try {
+                _protocol.Send(payload);
+            } catch {
+                RemoveRequest(requestId);
+#if SHARDY_DEBUG_RAW
+                Logger.Warning($"request failed: {requestId}.{requestName}");
+#endif
+                return -1;
+            }
+            return requestId;
         }
 
         /// <summary>
@@ -459,13 +518,23 @@ namespace Shardy {
                     OnAcknowledgement(block);
                     break;
                 case BlockType.Data:
-                    var payload = Payload.Decode(_serializer, block.Body);
-                    if (Payload.Check(payload)) {
-                        OnPayload(payload);
-                    } else {
+                    try {
+                        var payload = Payload.Decode(_serializer, block.Body);
+                        if (Payload.Check(payload)) {
+                            OnPayload(payload);
+                        } else {
 #if SHARDY_DEBUG_RAW
-                        Logger.Warning($"invalid payload: {payload}", TAG);
+                            Logger.Warning("invalid payload", TAG);
 #endif
+                            _disconnectReason = DisconnectReason.Unknown;
+                            Disconnect();
+                        }
+                    } catch (Exception e) {
+#if SHARDY_DEBUG_RAW
+                        Logger.Error($"payload decode failed: {e}", TAG);
+#endif
+                        _disconnectReason = DisconnectReason.Unknown;
+                        Disconnect();
                     }
                     break;
                 default:
@@ -532,12 +601,31 @@ namespace Shardy {
             Logger.Info("<- acknowledge");
 #endif
             _pulse.Reset();
-            var state = _validator.VerifyAcknowledgement(block.Body);
+            var state = ValidatorState.Failed;
+            try {
+                state = _validator.VerifyAcknowledgement(block.Body);
+            } catch (Exception e) {
+#if SHARDY_DEBUG_RAW
+                Logger.Error($"acknowledgement validation failed: {e}", TAG);
+#endif
+                _disconnectReason = DisconnectReason.Handshake;
+                Disconnect();
+                return;
+            }
 #if SHARDY_DEBUG_RAW
             Logger.Info($"acknowledgement data: {Utils.DataToDebug(block.Body)}, validation state: {state}", TAG);
 #endif
             if (state == ValidatorState.Success) {
-                Acknowledge(_validator.Acknowledgement(block.Body));
+                try {
+                    Acknowledge(_validator.Acknowledgement(block.Body));
+                } catch (Exception e) {
+#if SHARDY_DEBUG_RAW
+                    Logger.Error($"acknowledgement creation failed: {e}", TAG);
+#endif
+                    _disconnectReason = DisconnectReason.Handshake;
+                    Disconnect();
+                    return;
+                }
 #if SHARDY_DEBUG
                 Logger.Info("ready to work");
 #endif
@@ -563,8 +651,11 @@ namespace Shardy {
         /// </summary>
         /// <param name="block">Kick reason data</param>
         void OnKick(BlockData block) {
-            int.TryParse(Utils.DataToString(block.Body), out var index);
-            _disconnectReason = (DisconnectReason)index;
+            if (int.TryParse(Utils.DataToString(block.Body), out var index) && Enum.IsDefined(typeof(DisconnectReason), index)) {
+                _disconnectReason = (DisconnectReason)index;
+            } else {
+                _disconnectReason = DisconnectReason.Unknown;
+            }
 #if SHARDY_DEBUG
             Logger.Info($"<- kick: {_disconnectReason}");
 #endif
