@@ -188,6 +188,7 @@ See [documentation](./Documentation~/index.md) for information on all classes an
 # 🧩 Modules
 
 [FSM](https://github.com/mopsicus/shardy-fsm) – implementation of a finite state machine with flexible API: states, triggers, conditions.
+
 [Signals](https://github.com/mopsicus/shardy-signals) — simple event manager aka eventbus aka pub-sub implementation with `WeakRefence` support.
 
 
