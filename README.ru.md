@@ -188,6 +188,7 @@ class MyJsonSerializer : ISerializer {
 # 🧩 Модули
 
 [FSM](https://github.com/mopsicus/shardy-fsm) – конечный автомат (finite state machive) с гибким API: состояния, триггеры, условия
+
 [Signals](https://github.com/mopsicus/shardy-signals) — простой менеджер событий aka шина данных (eventbus) aka паттерн публикация-подписка (pub-sub) с поддержкой `WeakRefence`.
 
 
